@@ -1,177 +1,230 @@
 package com.example.practicadegeolocalizacion;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.ActivityCompat;
-import androidx.fragment.app.Fragment;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
-import androidx.fragment.app.FragmentTransaction;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
+import android.graphics.Color;
+import android.location.Address;
+import android.location.Geocoder;
 import android.location.Location;
+import android.location.LocationListener;
 import android.location.LocationManager;
-import android.nfc.Tag;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
 import android.view.View;
 import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Spinner;
-
 import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.GoogleMapOptions;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.GroundOverlayOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MapStyleOptions;
 import com.google.android.gms.maps.model.MarkerOptions;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import android.widget.Spinner;
+import com.google.android.gms.maps.model.Polyline;
+import com.google.android.gms.maps.model.PolylineOptions;
 
 public class MainActivity extends FragmentActivity implements OnMapReadyCallback {
 
+    private GoogleMap mMap;
     private static final String TAG = "estilo del mapa";
-    static final String LATITUD_FINAL = "latitud_final";
-    static final String LONGITUD_FINAL = "longitud_final";
+    private static final int REQUEST_LOCATION_PERMISSION = 1;
     private LatLng japon = new LatLng(35.680513, 139.769051);
     private LatLng alemania = new LatLng(52.516934, 13.403190);
     private LatLng italia = new LatLng(41.902609, 12.494847);
     private LatLng francia = new LatLng(48.843489, 2.355331);
-
-    fragmentnormal fragmentnormal1;
-    fragmentsatelite fragmentsatelite1;
-    fragmenthibrido fragmenthibrido1;
-    fragmentterrarian fragmentterrarian1;
-    private double latitudActual = 0;
-    private double longitudActual = 0;
-    private double latitudFinal = 0;
-    private double longitudFinal = 0;
-    Spinner spinner;
-    List<String> maps;
-    private GoogleMap map;
-
+    private LatLng posicionaactual;
+    private Location locacioninicio = new Location("Origen");
+    private Location locacionfin = new Location("Destino");
+    private double latitudactual = 0;
+    private double longitudactual = 0;
+    private double latitudfinal = 0;
+    private double longitudfinal = 0;
+    private String messageAlert = "";
+    private boolean isAlertDisplayed = false;
+    private int seleccion = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        SupportMapFragment mapFragment = SupportMapFragment.newInstance();
-        getSupportFragmentManager().beginTransaction()
-                .add(R.id.frameLayout,mapFragment)
-                .commit();
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.fragmentmap);
         mapFragment.getMapAsync(this);
-
-        if (savedInstanceState != null) {
-            longitudFinal = savedInstanceState.getDouble(LONGITUD_FINAL);
-            latitudFinal = savedInstanceState.getDouble(LATITUD_FINAL);
-        }
-
-        spinner = findViewById(R.id.spinner);
-        fragmentnormal1 = new fragmentnormal();
-        fragmentsatelite1 = new fragmentsatelite();
-        fragmenthibrido1 = new fragmenthibrido();
-        fragmentterrarian1 = new fragmentterrarian();
-
-        maps = new ArrayList<>();
-        maps.add("Normal");
-        maps.add("Satelite");
-        maps.add("Hibrido");
-        maps.add("Terrarian");
-
-        ArrayAdapter<String> arrayAdapter = new ArrayAdapter<>(MainActivity.this,R.layout.item,maps);
-        arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(arrayAdapter);
-
-    }
-
-
-    private void selectFragment(Fragment fragment) {
-        FragmentTransaction fragmentTransaction = getSupportFragmentManager().beginTransaction();
-        fragmentTransaction.replace(R.id.frameLayout,fragment);
-        fragmentTransaction.commit();
     }
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
-        map = googleMap;
+        mMap = googleMap;
 
-        Spinner spnTipoMapa = (Spinner)findViewById(R.id.spinner);
+        try {
+            boolean success = mMap .setMapStyle(MapStyleOptions.loadRawResourceStyle(getApplicationContext(),R.raw.map_style));
+            if (!success){
+                Log.e(TAG,"Fallo al cargar estilo del mapa");
+            }
+        }catch (Resources.NotFoundException e) {
+            Log.e(TAG,"No es posible hallar el estilo. Error: ", e);
+        }
+        mMap.getUiSettings().setZoomControlsEnabled(true);
+        enableMyLocation();
 
-        spnTipoMapa.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+        if (seleccion != 0){
+            eleccionmapa(seleccion);
+        }
+        Spinner spinner = (Spinner)findViewById(R.id.spinner);
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 seleccion=position;
                 isAlertDisplayed=true;
                 if (!enableMyLocation()){ return; }
-                seleccionMapa(position);
+                eleccionmapa(position);
             }
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-
             }
         });
     }
 
-    private void seleccionMapa(int seleccion){
-
-        map.clear();
-        switch(seleccion){
+    private void eleccionmapa(int eleccion){
+        locacioninicio.setLatitude(latitudactual);
+        locacioninicio.setLongitude(longitudactual);
+        locacionfin.setLatitude(latitudfinal);
+        locacionfin.setLongitude(longitudfinal);
+        mMap.clear();
+        switch(eleccion){
             case 1:
-                //paisOverlay.image(BitmapDescriptorFactory.fromResource(R.drawable.world)).position(japon,100);
-                map.setMapType(GoogleMap.MAP_TYPE_NORMAL);
-                latitudFinal = japon.latitude;
-                longitudFinal = japon.longitude;
-                agregarMarcadorIcono(japon,R.drawable.mundo);
+                mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+                latitudfinal = japon.latitude;
+                longitudfinal = japon.longitude;
+                iconomarcador(japon,R.drawable.mundo);
                 break;
             case 2:
-                //paisOverlay.image(BitmapDescriptorFactory.fromResource(R.drawable.satellite)).position(alemania,100);
-                map.setMapType(GoogleMap.MAP_TYPE_HYBRID);
-                latitudFinal = alemania.latitude;
-                longitudFinal = alemania.longitude;
-                agregarMarcadorIcono(alemania,R.drawable.satelite);
+                mMap.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
+                latitudfinal = alemania.latitude;
+                longitudfinal = alemania.longitude;
+                iconomarcador(alemania,R.drawable.satelite);
                 break;
             case 3:
-                //paisOverlay.image(BitmapDescriptorFactory.fromResource(R.drawable.mountain)).position(italia,100);
-                map.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
-                latitudFinal = italia.latitude;
-                longitudFinal = italia.longitude;
-                agregarMarcadorIcono(italia, R.drawable.montana);
+                mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
+                latitudfinal = italia.latitude;
+                longitudfinal = italia.longitude;
+                iconomarcador(italia, R.drawable.montana);
                 break;
             case 4:
-                //paisOverlay.image(BitmapDescriptorFactory.fromResource(R.drawable.plane)).position(francia,100);
-                map.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
-                latitudFinal = francia.latitude;
-                longitudFinal = francia.longitude;
-                agregarMarcadorIcono(francia,R.drawable.plano);
+                mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
+                latitudfinal = francia.latitude;
+                longitudfinal = francia.longitude;
+                iconomarcador(francia,R.drawable.plano);
                 break;
             default:
                 break;
         }
-
+        if (eleccion != 0){
+            colorearruta();
+            if (isAlertDisplayed){
+                messageAlert = obtenerDistancia(locacioninicio, locacionfin);
+                mostrarMensaje(messageAlert);
+            }
+        }
+        obtenerUbicacionActual();
     }
 
-    private void agregarMarcadorIcono(LatLng location, int icono) {
-        CameraUpdate miUbicacion = CameraUpdateFactory.newLatLngZoom(location, 16);
-        map.addMarker(new MarkerOptions().position(location).title(getString(R.string.destino)).icon(BitmapDescriptorFactory.fromResource(icono)));
-        map.animateCamera(miUbicacion);
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        switch (requestCode) {
+            case REQUEST_LOCATION_PERMISSION:
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    enableMyLocation();
+                    break;
+                }
+        }
     }
 
+    private boolean enableMyLocation() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            mMap.setMyLocationEnabled(true);
+            obtenerUbicacionActual();
+            return true;
+        } else {
+            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION_PERMISSION);
+            return false;
+        }
+    }
 
+    public void obtenerUbicacionActual() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,500,0, locationListener);
+        latitudactual = location.getLatitude();
+        longitudactual = location.getLongitude();
+        posicionaactual = new LatLng(latitudactual, longitudactual);
+        marcador(posicionaactual);
+    }
 
+    LocationListener locationListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location location) { }
 
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) { }
+
+        @Override
+        public void onProviderEnabled(String provider) { }
+
+        @Override
+        public void onProviderDisabled(String provider) { }
+    };
+
+    private String obtenerDistancia(Location locationinicio, Location locationfin) {
+        double distancia = locationinicio.distanceTo(locationfin);
+        distancia /= 1000;
+        return  getString(R.string.diferencia) + distancia + getString(R.string.km);
+    }
+
+    private void colorearruta() {
+        Polyline line = mMap.addPolyline(new PolylineOptions().add(new LatLng(latitudactual, longitudactual), new LatLng(latitudfinal, longitudfinal)).width(15).color(Color.BLUE).geodesic(true));
+    }
+
+    private void mostrarMensaje(String message) {
+        AlertDialog.Builder alert = new AlertDialog.Builder(this);
+        alert.setTitle(R.string.distancia);
+        alert.setMessage(message);
+        alert.setCancelable(false);
+
+        alert.setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int i) {
+                isAlertDisplayed=false;
+            }
+        });
+        AlertDialog dialog = alert.create();
+        dialog.show();
+    }
+
+    private void iconomarcador(LatLng location, int icono) {
+        CameraUpdate ubicacion = CameraUpdateFactory.newLatLngZoom(location, 16);
+        mMap.addMarker(new MarkerOptions().position(location).title(getString(R.string.destino)).icon(BitmapDescriptorFactory.fromResource(icono)));
+        mMap.animateCamera(ubicacion);
+    }
+
+    private void marcador(LatLng location) {
+        CameraUpdate ubicacion = CameraUpdateFactory.newLatLngZoom(location, 16);
+        mMap.addMarker(new MarkerOptions().position(location).title(getString(R.string.actual)).icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN)));
+        mMap.animateCamera(ubicacion);
+    }
 }
-
