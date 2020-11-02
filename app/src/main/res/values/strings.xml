@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">PracticadeGeolocalizacion</string>
+    <string name="title_activity_fragmentnormal">Map</string>
+    <string name="title_activity_fragmentsatelite">Map</string>
+    <string name="title_activity_fragmenthibrido">Map</string>
+    <string name="title_activity_fragmentterrarian">Map</string>
+    <string name="destino">Ubicacion Final</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="actual">Ubicacion Actual</string>
+</resources>
